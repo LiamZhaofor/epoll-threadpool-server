@@ -1,0 +1,3 @@
+/home/zjs/workspace/projects/epoll-threadpool-server/build/CMakeFiles/server.dir
+/home/zjs/workspace/projects/epoll-threadpool-server/build/CMakeFiles/edit_cache.dir
+/home/zjs/workspace/projects/epoll-threadpool-server/build/CMakeFiles/rebuild_cache.dir

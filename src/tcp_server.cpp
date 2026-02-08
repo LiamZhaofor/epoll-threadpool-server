@@ -63,10 +63,10 @@ void TcpSever::RunBlockingEcho(){
             ssize_t n = ::recv(cfd,buf,sizeof(buf),0);
             if(n > 0){
                 ssize_t sent = 0;
-                while (send < n)
+                while (sent < n)
                 {
-                    ssize_t m = ::send(cfd,buf + sent,n -send,0);
-                    if(m > 0) send += m;
+                    ssize_t m = ::send(cfd,buf + sent,n -sent,0);
+                    if(m > 0) sent += m;
                     else if(m < 0 && errno == EINTR) continue;
                     else {std::cerr<<"[server] send error\n";break;}
                 }
