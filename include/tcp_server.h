@@ -1,12 +1,12 @@
 #pragma once
 #include <cstdint>
 
-class TcpSever {
+class TcpServer {
     public:
-        TcpSever(const char* ip,uint16_t port);
-        ~TcpSever();
+        TcpServer(const char* ip,uint16_t port);
+        ~TcpServer();
 
-        void RunBlockingEcho();
+        void RunBlockingServer();
     
     private:
     int listen_fd_{-1};

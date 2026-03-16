@@ -1,4 +1,4 @@
-# Install script for directory: /home/zjs/workspace/projects/epoll-threadpool-server
+# Install script for directory: /home/zjs/epoll-threadpool-server
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -50,5 +50,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/zjs/workspace/projects/epoll-threadpool-server/build/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/zjs/epoll-threadpool-server/build/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

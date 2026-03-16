@@ -4,7 +4,7 @@
 # compile CXX with /usr/bin/c++
 CXX_DEFINES = 
 
-CXX_INCLUDES = -I/home/zjs/workspace/projects/epoll-threadpool-server/include
+CXX_INCLUDES = -I/home/zjs/epoll-threadpool-server/include
 
 CXX_FLAGS = -Wall -Wextra -O2 -std=gnu++17
 

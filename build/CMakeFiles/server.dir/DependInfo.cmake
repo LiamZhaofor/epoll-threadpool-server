@@ -8,8 +8,8 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/zjs/workspace/projects/epoll-threadpool-server/src/main.cpp" "CMakeFiles/server.dir/src/main.cpp.o" "gcc" "CMakeFiles/server.dir/src/main.cpp.o.d"
-  "/home/zjs/workspace/projects/epoll-threadpool-server/src/tcp_server.cpp" "CMakeFiles/server.dir/src/tcp_server.cpp.o" "gcc" "CMakeFiles/server.dir/src/tcp_server.cpp.o.d"
+  "/home/zjs/epoll-threadpool-server/src/main.cpp" "CMakeFiles/server.dir/src/main.cpp.o" "gcc" "CMakeFiles/server.dir/src/main.cpp.o.d"
+  "/home/zjs/epoll-threadpool-server/src/tcp_server.cpp" "CMakeFiles/server.dir/src/tcp_server.cpp.o" "gcc" "CMakeFiles/server.dir/src/tcp_server.cpp.o.d"
   )
 
 # Targets to which this target links.

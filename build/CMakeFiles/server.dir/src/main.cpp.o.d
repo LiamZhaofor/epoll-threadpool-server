@@ -1,7 +1,7 @@
 CMakeFiles/server.dir/src/main.cpp.o: \
- /home/zjs/workspace/projects/epoll-threadpool-server/src/main.cpp \
+ /home/zjs/epoll-threadpool-server/src/main.cpp \
  /usr/include/stdc-predef.h \
- /home/zjs/workspace/projects/epoll-threadpool-server/include/tcp_server.h \
+ /home/zjs/epoll-threadpool-server/include/tcp_server.h \
  /usr/include/c++/11/cstdint \
  /usr/include/x86_64-linux-gnu/c++/11/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/11/bits/os_defines.h \
