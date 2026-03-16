@@ -2,6 +2,6 @@
 
 int main(){
     TcpSever server("0.0.0.0",8080);
-    server.RunBlockingEcho();
+    server.RunBlockingServer();
     return 0;
 }
