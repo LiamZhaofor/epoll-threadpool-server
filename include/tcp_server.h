@@ -6,8 +6,18 @@ class TcpServer {
         TcpServer(const char* ip,uint16_t port);
         ~TcpServer();
 
-        void RunBlockingServer();
+        void Run();
     
     private:
-    int listen_fd_{-1};
+    void InitEpoll();
+    void AddEpoll(int fd,uint32_t events);
+    void RemoveEpoll(int fd);
+    void HandleAccept();
+    void HandleRead(int fd);
+    void CloseClient(int fd);
+    bool SendWelcomeMessage(int fd);
+    
+    private:
+        int listen_fd_{-1};
+        int epoll_fd_{-1};
 };
