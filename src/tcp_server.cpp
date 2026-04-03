@@ -34,7 +34,7 @@ bool TcpServer::SendWelcomeMessage(int fd){
         "\033[0m\n"
         ">>";
     if(::send(fd,welcome,std::strlen(welcome),0) < 0){
-        std::cerr<<"[server] send welcome message failed\n";
+        std::cerr<<"[server] send welcome message failed fd="<<fd<<"\n";
         return false;
     }
     return true;
@@ -101,7 +101,11 @@ void TcpServer::Run(){
         }
         for(int i = 0; i < nfds; ++i){
             if(events[i].events & (EPOLLERR | EPOLLHUP)){
-                std::cerr<<"[server] epoll error on fd="<<events[i].data.fd<<"\n";
+                std::cerr<<"[server] epoll error on fd="
+                <<events[i].data.fd<<"\n"
+                << " EPOLLERR=" << static_cast<bool>(events[i].events & EPOLLERR)
+                << " EPOLLHUP=" << static_cast<bool>(events[i].events & EPOLLHUP)
+                << "\n";
                 CloseClient(events[i].data.fd);
                 continue;
             }
@@ -122,19 +126,22 @@ void TcpServer::HandleAccept(){
     {
         sockaddr_in cli{};
         socklen_t len = sizeof(cli);
-        int fd = ::accept(listen_fd_,reinterpret_cast<sockaddr*>(&cli),&len);
+        int fd = ::accept4(listen_fd_,reinterpret_cast<sockaddr*>(&cli),&len,SOCK_NONBLOCK);
+        
         if(fd < 0){
             if(errno == EINTR) continue;
             if(errno == EAGAIN || errno == EWOULDBLOCK) break;
             Die("accept failed");
         }
-        SetNonBlocking(fd);  //设置为非阻塞
+        std::cout << "[debug] accepted fd=" << fd << "\n";
+//        SetNonBlocking(fd);  //设置为非阻塞
         bool welcome_sent = SendWelcomeMessage(fd);     //发送欢迎消息
         if(!welcome_sent) {             //如果发送欢迎消息失败，关闭连接并继续接受下一个连接
             ::close(fd);
             continue;
         }  
         AddEpoll(fd, EPOLLIN);
+        connections_.emplace(fd, Connection(fd));  //创建Connection对象并存储到connections_中
         char ipbuf[INET_ADDRSTRLEN]{};
         ::inet_ntop(AF_INET,&cli.sin_addr,ipbuf,sizeof(ipbuf));
         std::cout<<"[server] client connected: "<<ipbuf<<":"<<ntohs(cli.sin_port)<<"\n";
@@ -146,31 +153,50 @@ void TcpServer::HandleAccept(){
         
 void TcpServer::HandleRead(int fd){
     char buf[4096];
+    std::cout << "[debug] HandleRead fd=" << fd << "\n";
+
+    auto it = connections_.find(fd);
+    if(it == connections_.end()){
+        std::cerr << "[server] no connection found for fd=" << fd << "\n";
+        CloseClient(fd);
+        return;
+    }
+
+    Connection& conn = it->second;
     ssize_t n = ::recv(fd,buf,sizeof(buf),0);
+
         if(n > 0){
-            std::string msg(buf,n);  //处理退出逻辑
-            while(!msg.empty() && (msg.back() == '\n' || msg.back() == '\r')){
+
+            conn.ReadBuffer().append(buf, n);
+
+            while(true){
+                std::size_t pos = conn.ReadBuffer().find('\n');
+                if(pos == std::string::npos) break;  //没有完整的命令
+                std::string msg = conn.ReadBuffer().substr(0,pos + 1);  //提取
+                conn.ReadBuffer().erase(0,pos + 1);  //删除已处理的部分
+
+                //处理退出逻辑
+                while(!msg.empty() && (msg.back() == '\n' || msg.back() == '\r')){
                 msg.pop_back();
-            }
-            if(msg == "quit"){
-                const char* goodbye =
-                "\033[33m"
-                "Bye! Connection will be closed.\n"
-                "\033[0m";
-
-                if(::send(fd,goodbye,strlen(goodbye),0) < 0){
-                    std::cerr<<"[server] send goodbye message failed\n";
                 }
-                std::cout<<"[server] client requested quit\n";
-                CloseClient(fd);
-                return;
-            }
+                if(msg == "quit"){
+                    const char* goodbye =
+                    "\033[33m"
+                    "Bye! Connection will be closed.\n"
+                    "\033[0m";
 
+                    if(::send(fd,goodbye,strlen(goodbye),0) < 0){
+                        std::cerr<<"[server] send goodbye message failed\n";
+                    }
+                    std::cout<<"[server] client requested quit\n";
+                    CloseClient(fd);
+                    return;
+                }
             ssize_t sent = 0;   //正常输出逻辑
-            while (sent < n)
+            std::string response = msg + "\n";
+            while (sent < static_cast<ssize_t>(response.size()))
             {
-                
-                ssize_t m = ::send(fd,buf + sent,n -sent,0);
+                ssize_t m = ::send(fd,response.data() + sent,response.size() - sent,0);
                 if(m > 0) sent += m;
                 else if( m < 0 && errno == EINTR) continue;
                 else if( m < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) continue;
@@ -181,16 +207,17 @@ void TcpServer::HandleRead(int fd){
                 }
             }
 
-            const char* prompt = ">>";
-            ssize_t o = ::send(fd,prompt,strlen(prompt),0);
-            if(o < 0){
-                if(errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) return;
-                std::cerr<<"[server] send prompt failed\n";
-                CloseClient(fd);
-                return;
-            }
-
-        }else if(n == 0){
+            // const char* prompt = ">>";
+            // if(::send(fd,prompt,strlen(prompt),0) < 0){
+            //     if(errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) return;
+            //     std::cerr<<"[server] send prompt failed\n";
+            //     CloseClient(fd);
+            //     return;
+            // }
+        }
+        return;
+    }
+        else if(n == 0){
             std::cout<<"[server] client disconnected\n";
             CloseClient(fd);
             return;
@@ -200,10 +227,17 @@ void TcpServer::HandleRead(int fd){
             std::cerr<<"[server] recv error errno="<<errno<<"("<<std::strerror(errno)<<")\n";
             CloseClient(fd);
             return;
-        }
-}
+        } 
+    }
+
 
 void TcpServer::CloseClient(int fd){
+    std::cout << "[debug] CloseClient fd=" << fd << "\n";
     RemoveEpoll(fd);
     ::close(fd);
+    
+    auto it = connections_.find(fd);
+    if(it != connections_.end()){
+        connections_.erase(it);
+    }
 }

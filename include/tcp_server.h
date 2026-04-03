@@ -1,5 +1,9 @@
 #pragma once
+
 #include <cstdint>
+#include <unordered_map>
+
+#include "connection.h"
 
 class TcpServer {
     public:
@@ -20,4 +24,6 @@ class TcpServer {
     private:
         int listen_fd_{-1};
         int epoll_fd_{-1};
+        std::unordered_map<int, Connection> connections_;
+
 };
