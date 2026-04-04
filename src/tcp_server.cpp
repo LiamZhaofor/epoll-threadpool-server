@@ -57,7 +57,8 @@ void TcpServer::RemoveEpoll(int fd){
     std::cerr << "[server] epoll_ctl del failed for fd=" << fd << '\n';
 }
 
-TcpServer::TcpServer(const char* ip,uint16_t port){
+TcpServer::TcpServer(const char* ip,uint16_t port)
+    : thread_pool_(4) {  // Initialize thread pool with 4 threads
     listen_fd_ = ::socket(AF_INET,SOCK_STREAM,0);
     if(listen_fd_ < 0) Die("socket failed");
     SetNonBlocking(listen_fd_);     //设置为非阻塞
@@ -192,8 +193,15 @@ void TcpServer::HandleRead(int fd){
                     CloseClient(fd);
                     return;
                 }
-            ssize_t sent = 0;   //正常输出逻辑
+            
             std::string response = msg + "\n";
+            thread_pool_.Enqueue([fd, response](){
+                // Implementation for sending response
+                std::cout << "[debug] Sending response to fd=" << fd << ": " << response;
+
+            });
+
+            ssize_t sent = 0;   //正常输出逻辑
             while (sent < static_cast<ssize_t>(response.size()))
             {
                 ssize_t m = ::send(fd,response.data() + sent,response.size() - sent,0);

@@ -8,6 +8,7 @@ add_executable(server
     src/main.cpp
     src/tcp_server.cpp
     src/connection.cpp
+    src/threadpool.cpp
 )
 
 target_compile_options(server PRIVATE -Wall -Wextra -O2)
