@@ -9,6 +9,9 @@
 - 多客户端并发接入
 - `Connection` 连接对象管理
 - 基于 `\n` 分隔符的基础消息切分
+- 最小线程池实现与任务投递
+- worker 结果通过结果队列回到主线程
+- 基于 `eventfd` 的主线程唤醒
 - Echo 回显与 `quit` 主动退出
 
 ## 项目目标
@@ -42,7 +45,13 @@ accept / recv
   ->
 Connection buffer
   ->
-echo response
+ThreadPool
+  ->
+TaskResult queue
+  ->
+eventfd wakeup
+  ->
+write_buffer / send
 ```
 
 ### 当前实现能力
@@ -53,10 +62,14 @@ echo response
 - 每个连接拥有独立的读写缓冲区
 - 收到的数据先进入 `read_buffer`
 - 以 `\n` 作为消息边界，逐条切分并处理
+- 主线程把完整消息投递给线程池
+- worker 线程生成响应结果
+- 处理结果通过 `TaskResult` 队列回到主线程
+- worker 通过 `eventfd` 唤醒主线程处理结果
+- 主线程统一把结果写入 `write_buffer` 并发送
 
 ### 当前仍未完成
 
-- 线程池
 - 写缓冲驱动的异步发送
 - 更完善的日志系统
 - 超时连接清理
@@ -67,6 +80,7 @@ echo response
 - C++17
 - Linux Socket API
 - epoll
+- eventfd
 - CMake
 - TCP/IP
 
@@ -76,11 +90,13 @@ echo response
 epoll-threadpool-server
 ├── include
 │   ├── connection.h
-│   └── tcp_server.h
+│   ├── tcp_server.h
+│   └── threadpool.h
 ├── src
 │   ├── connection.cpp
 │   ├── main.cpp
-│   └── tcp_server.cpp
+│   ├── tcp_server.cpp
+│   └── threadpool.cpp
 ├── test
 ├── CMakeLists.txt
 ├── rebuild.sh
@@ -118,7 +134,53 @@ epoll-threadpool-server
 
 引入 `Connection` 后，服务器开始从“按 fd 处理”过渡到“按连接对象处理”，为后续解决粘包半包和引入线程池打下基础。
 
-### 3. 基础协议处理
+### 3. `ThreadPool`
+
+当前版本已经实现了一个最小线程池：
+
+- 固定数量 worker 线程
+- 任务队列
+- `mutex + condition_variable`
+- 析构时统一唤醒并 `join`
+
+在服务器侧，主线程收到完整消息后会把任务投递给线程池。worker 线程只负责生成 `response`，再通过 `TaskResult` 队列把结果交还给主线程。
+
+### 4. 结果回传与写回
+
+为了避免 worker 线程直接操作 socket 和连接表，当前版本采用了“结果队列”这一中间层：
+
+```text
+HandleRead
+  ->
+Enqueue(task)
+  ->
+worker generate response
+  ->
+TaskResult queue
+  ->
+eventfd wakeup
+  ->
+ProcessTaskResults
+  ->
+Connection::write_buffer
+  ->
+send
+```
+
+这样主线程继续统一管理 `connections_` 和 socket 生命周期，线程池只负责业务处理。
+
+### 5. `eventfd` 唤醒机制
+
+当前版本增加了一个 `wake_fd`，把它也注册进 `epoll`：
+
+- worker 线程在 push 结果后向 `eventfd` 写入计数
+- 主线程从 `epoll_wait` 中被唤醒
+- 主线程在 `HandleWakeFd()` 中读空 `eventfd`
+- 然后调用 `ProcessTaskResults()` 消费结果队列
+
+这样可以避免“任务结果已经生成，但主线程还阻塞在下一轮 `epoll_wait` 里”的问题。
+
+### 6. 基础协议处理
 
 当前版本使用 `\n` 作为简单应用层分隔符：
 
@@ -176,7 +238,7 @@ quit
 
 可以把当前版本定义为：
 
-**一个基于 C++17、非阻塞 socket、epoll 和 Connection 管理的多客户端 Echo Server 原型。**
+**一个基于 C++17、非阻塞 socket、epoll、Connection 和最小线程池协作的多客户端 Echo Server 原型。**
 
 它已经具备：
 
@@ -184,8 +246,11 @@ quit
 - 多连接接入
 - 基础连接状态管理
 - 简单的消息边界处理
+- 线程池任务处理
+- 结果队列回传
+- `eventfd` 唤醒协作
 
-下一步将进入线程池阶段，把业务处理从主事件循环中拆分出去。
+下一步将继续完善写缓冲驱动发送、`EPOLLOUT` 写事件，以及更完整的线程池与业务解耦。
 
 ## License
 

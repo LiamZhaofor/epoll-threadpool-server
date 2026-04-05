@@ -5,6 +5,7 @@
 #include<sys/socket.h>
 #include<unistd.h>
 #include<sys/epoll.h>
+#include <sys/eventfd.h>
 
 #include<cerrno>
 #include<cstring>
@@ -83,11 +84,14 @@ TcpServer::TcpServer(const char* ip,uint16_t port)
     std::cout<<"[server] listening on "<<ip<<":"<<port<<'\n';
     InitEpoll();             //建立epoll实例
     AddEpoll(listen_fd_,EPOLLIN);           //监听listen_fd_的可读事件
+    InitWakeFd();            //初始化wake fd
+    AddEpoll(wake_fd_, EPOLLIN);  //监听wake fd的可
 }
 
 TcpServer::~TcpServer(){
     if(listen_fd_ >= 0 ) ::close(listen_fd_);
     if(epoll_fd_ >= 0) ::close(epoll_fd_);
+    if(wake_fd_ >= 0) ::close(wake_fd_);
 }
 
 void TcpServer::Run(){
@@ -114,10 +118,15 @@ void TcpServer::Run(){
                 int fd = events[i].data.fd;
                 if(fd == listen_fd_)
                     HandleAccept();
-                else 
+                else if(fd == wake_fd_)
+                    HandleWakeFd();
+                else {
                     HandleRead(fd);
+                }
             }
         }
+        ProcessTaskResults();  //处理任务结果并发送响应
+
     }
 }
 
@@ -194,37 +203,20 @@ void TcpServer::HandleRead(int fd){
                     return;
                 }
             
-            std::string response = msg + "\n";
-            thread_pool_.Enqueue([fd, response](){
+            thread_pool_.Enqueue([this,fd, msg](){
                 // Implementation for sending response
-                std::cout << "[debug] Sending response to fd=" << fd << ": " << response;
-
-            });
-
-            ssize_t sent = 0;   //正常输出逻辑
-            while (sent < static_cast<ssize_t>(response.size()))
-            {
-                ssize_t m = ::send(fd,response.data() + sent,response.size() - sent,0);
-                if(m > 0) sent += m;
-                else if( m < 0 && errno == EINTR) continue;
-                else if( m < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) continue;
-                else {
-                    std::cerr<<"[server] send error\n";
-                    CloseClient(fd);
-                    return;
+                std::string response =  "[echo]: " + msg + "\n";  // Add color to response
+                {
+                    std::lock_guard<std::mutex> lock(task_queue_mutex_);
+                    task_queue_.push({fd, response});
                 }
-            }
 
-            // const char* prompt = ">>";
-            // if(::send(fd,prompt,strlen(prompt),0) < 0){
-            //     if(errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) return;
-            //     std::cerr<<"[server] send prompt failed\n";
-            //     CloseClient(fd);
-            //     return;
-            // }
+                uint64_t one = 1;
+                ::write(wake_fd_, &one, sizeof(one));  // Wake up the main thread to process the task results
+            });
+            }
+            return;
         }
-        return;
-    }
         else if(n == 0){
             std::cout<<"[server] client disconnected\n";
             CloseClient(fd);
@@ -247,5 +239,56 @@ void TcpServer::CloseClient(int fd){
     auto it = connections_.find(fd);
     if(it != connections_.end()){
         connections_.erase(it);
+    }
+}
+
+void TcpServer::ProcessTaskResults(){
+    while(true){
+        TaskResult result;
+        {
+            std::lock_guard<std::mutex> lock(task_queue_mutex_);
+
+            if(task_queue_.empty()) break;
+            result = task_queue_.front();
+            task_queue_.pop();
+        }
+        auto it = connections_.find(result.fd);
+        if(it == connections_.end()) continue;
+        it->second.WriteBuffer() += result.response;
+            ssize_t sent = 0;   
+            while (sent < static_cast<ssize_t>(it->second.WriteBuffer().size()))
+            {
+                ssize_t m = ::send(result.fd, it->second.WriteBuffer().data() + sent, it->second.WriteBuffer().size() - sent, 0);
+                if(m > 0) sent += m;
+                else if( m < 0 && errno == EINTR) continue;
+                else if( m < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) continue;
+                else {
+                    std::cerr<<"[server] send error\n";
+                    CloseClient(result.fd);
+                    return;
+                }
+            }
+            it->second.WriteBuffer().clear();  //删除已发送的部分
+            // const char* prompt = ">>";
+            // if(::send(fd,prompt,strlen(prompt),0) < 0){
+            //     if(errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) return;
+            //     std::cerr<<"[server] send prompt failed\n";
+            //     CloseClient(fd);
+            //     return;
+            // }
+    }
+}
+
+void TcpServer::InitWakeFd(){
+    // Implementation for initializing wake fd
+    wake_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    if (wake_fd_ < 0) Die("eventfd failed");
+}
+
+void TcpServer::HandleWakeFd(){
+    // Implementation for handling wake fd events
+    uint64_t count;
+    while(::read(wake_fd_, &count,sizeof(count)) > 0){
+
     }
 }
